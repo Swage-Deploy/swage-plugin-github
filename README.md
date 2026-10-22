@@ -16,7 +16,7 @@ Adds GitHub as a source control provider. Sites can install repositories from yo
    sudo -u swage php /home/swage/app/current/artisan swage:plugin:install swage/github
    ```
 
-3. **Configure it** under **Source control → GitHub → Configure**: enter the OAuth app's client ID and secret. The page also shows the callback URL to give the app.
+3. **Configure it** under **Plugins → System → Configure GitHub**: enter the OAuth app's client ID and secret. The page also shows the callback URL to give the app.
 
 4. **Connect your account** under **Settings → Source control** in Swage.
 
