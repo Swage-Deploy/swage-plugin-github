@@ -208,3 +208,13 @@ test('deployments link their commit to it on github', function () {
     expect(app(SourceControlProviders::class)->get('github')->commitUrl('acme/app', 'abc1234'))
         ->toBe('https://github.com/acme/app/commit/abc1234');
 });
+
+test('a repository whose organization turned deploy keys off says where to allow them', function () {
+    Http::fake(['api.github.com/repos/acme/app/keys' => Http::response([
+        'message' => 'Validation Failed',
+        'errors' => [['resource' => 'PublicKey', 'code' => 'custom', 'message' => 'Deploy keys are disabled for this repository']],
+    ], 422)]);
+
+    expect(fn () => (new GitHubClient('token'))->addDeployKey('acme/app', 'Swage', 'ssh-ed25519 AAAA'))
+        ->toThrow(SourceControlException::class, 'The acme organization, or its enterprise, has turned deploy keys off.');
+});

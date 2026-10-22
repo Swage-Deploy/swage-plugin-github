@@ -71,13 +71,25 @@ class GitHubClient implements SourceControlClient
         return "git@github.com:{$repository}.git";
     }
 
+    /**
+     * Organizations and enterprises can turn deploy keys off, which GitHub reports as a validation error. That is a
+     * setting on GitHub, so the error says where to change it.
+     */
     public function addDeployKey(string $repository, string $title, string $publicKey): string
     {
-        return (string) $this->succeeded($this->request(retry: false)->post("/repos/{$repository}/keys", [
+        $response = $this->request(retry: false)->post("/repos/{$repository}/keys", [
             'title' => $title,
             'key' => $publicKey,
             'read_only' => true,
-        ]))->json('id');
+        ]);
+
+        if ($response->status() === 422 && str_contains(collect($response->json('errors', []))->pluck('message')->implode(' '), 'Deploy keys are disabled')) {
+            $owner = strtok($repository, '/');
+
+            throw new SourceControlException("GitHub does not allow deploy keys on {$repository}. The {$owner} organization, or its enterprise, has turned deploy keys off. An organization owner can allow them in the organization's settings on GitHub, under its deploy keys policy. Then install the repository again.");
+        }
+
+        return (string) $this->succeeded($response)->json('id');
     }
 
     public function deleteDeployKey(string $repository, string $keyId): void
