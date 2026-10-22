@@ -28,6 +28,10 @@ Until a client ID and secret are entered on its config page, the plugin uses `GI
 
 GitHub signs each delivery with the webhook's secret in the `X-Hub-Signature-256` header, which Swage checks before deploying. If the panel is behind Cloudflare Access, the `webhooks/*` bypass covers GitHub's deliveries.
 
+## Deployments
+
+A site's deployments link each commit to its page on GitHub. This needs Swage `v1.0.6` or later, so update Swage before updating the plugin to `v1.1.0`.
+
 ## Development
 
 The plugin implements Swage's source control contract (`App\SourceControl\SourceControlProvider`, `SourceControlClient` and `HasSettings`), version 1, so it runs inside a Swage install rather than on its own.

@@ -6,6 +6,7 @@ use App\Models\SourceControlConnection;
 use App\SourceControl\ConnectedAccount;
 use App\SourceControl\HasSettings;
 use App\SourceControl\InvalidWebhookException;
+use App\SourceControl\LinksToCommits;
 use App\SourceControl\ProviderSettings;
 use App\SourceControl\Push;
 use App\SourceControl\Setting;
@@ -19,7 +20,7 @@ use Laravel\Socialite\Two\GithubProvider as SocialiteGitHub;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Throwable;
 
-class GitHubProvider implements HasSettings, SourceControlProvider
+class GitHubProvider implements HasSettings, LinksToCommits, SourceControlProvider
 {
     public function id(): string
     {
@@ -72,6 +73,11 @@ class GitHubProvider implements HasSettings, SourceControlProvider
             username: (string) $user->getNickname(),
             token: $user->token,
         );
+    }
+
+    public function commitUrl(string $repository, string $commit): string
+    {
+        return "https://github.com/{$repository}/commit/{$commit}";
     }
 
     /**

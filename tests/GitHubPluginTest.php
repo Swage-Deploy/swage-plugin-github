@@ -203,3 +203,8 @@ test('a webhook left on the repository is updated and reused instead of failing'
 
     Http::assertSent(fn ($request) => $request->method() === 'PATCH' && $request['config']['secret'] === 'new-secret');
 });
+
+test('deployments link their commit to it on github', function () {
+    expect(app(SourceControlProviders::class)->get('github')->commitUrl('acme/app', 'abc1234'))
+        ->toBe('https://github.com/acme/app/commit/abc1234');
+});
