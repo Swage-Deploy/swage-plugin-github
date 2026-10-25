@@ -1,0 +1,27 @@
+{
+    "name": "swage/github",
+    "description": "GitHub source control provider for Swage.",
+    "type": "swage-plugin",
+    "license": "MIT",
+    "require": {
+        "php": "^8.3",
+        "laravel/framework": "^13.0",
+        "laravel/socialite": "^5.12"
+    },
+    "autoload": {
+        "psr-4": {
+            "Swage\\GitHub\\": "src/"
+        }
+    },
+    "extra": {
+        "swage": {
+            "kind": "source-control",
+            "contract": 1
+        },
+        "laravel": {
+            "providers": [
+                "Swage\\GitHub\\GitHubServiceProvider"
+            ]
+        }
+    }
+}
