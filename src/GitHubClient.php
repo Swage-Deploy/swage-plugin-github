@@ -170,6 +170,10 @@ class GitHubClient implements SourceControlClient
             return $response;
         }
 
+        if ($response->status() === 401) {
+            throw new SourceControlException('GitHub no longer accepts Swage\'s connection, which happens when it is revoked or its token expired. Reconnect GitHub from your source control settings.');
+        }
+
         $errors = collect($response->json('errors', []))->pluck('message')->filter()->implode(' ');
 
         throw new SourceControlException(trim('GitHub: '.($response->json('message') ?? "HTTP {$response->status()}").' '.$errors));

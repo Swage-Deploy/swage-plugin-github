@@ -37,7 +37,7 @@ Adds GitHub as a source control provider. Sites can install repositories from yo
 
 4. **Connect your account** under **Settings → Source control** in Swage.
 
-Swage asks GitHub for the `repo` and `read:org` scopes, to add deploy keys and webhooks to private repositories and to list your organizations. GitHub OAuth app tokens do not expire, so a connection keeps working until you disconnect it or revoke the app in GitHub.
+Swage asks GitHub for the `repo` and `read:org` scopes, to add deploy keys and webhooks to private repositories and to list your organizations. GitHub OAuth app tokens do not expire, so a connection keeps working until you disconnect it or revoke the app in GitHub. If you use a GitHub App instead, its tokens expire after eight hours, and Swage refreshes them before they're used. Connections made before v1.0.1 of this plugin didn't keep the refresh token, so reconnect GitHub once after updating.
 
 Until a client ID and secret are entered on its config page, the plugin uses `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` from Swage's `.env`, so installs that set GitHub up there before it became a plugin keep working.
 

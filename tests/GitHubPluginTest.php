@@ -13,9 +13,13 @@ use App\Models\SourceControlConnection;
 use App\Models\User;
 use App\SourceControl\SourceControlException;
 use App\SourceControl\SourceControlProviders;
+use Illuminate\Http\Client\Request as ClientRequest;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Laravel\Socialite\Facades\Socialite;
+use Laravel\Socialite\Two\GithubProvider as SocialiteGitHub;
+use Laravel\Socialite\Two\User as SocialiteUser;
 use Livewire\Livewire;
 use Swage\GitHub\GitHubClient;
 use Swage\GitHub\GitHubProvider;
@@ -180,6 +184,65 @@ test('connecting github asks for access to repositories and organizations', func
     parse_str((string) parse_url($location, PHP_URL_QUERY), $query);
 
     expect(explode(',', $query['scope']))->toContain('repo', 'read:org');
+});
+
+test('connecting a github app stores the refresh token its expiring tokens come with', function () {
+    config(['services.github' => ['client_id' => 'client', 'client_secret' => 'secret', 'redirect' => 'https://swage.test/auth/github/callback']]);
+    $user = User::factory()->create();
+    $socialiteUser = (new SocialiteUser)->map(['id' => 9, 'nickname' => 'jane'])->setToken('access')->setRefreshToken('refresh')->setExpiresIn(28800);
+    $socialite = Mockery::mock(SocialiteGitHub::class);
+    $socialite->allows('user')->andReturn($socialiteUser);
+    Socialite::shouldReceive('buildProvider')->andReturn($socialite);
+
+    $this->actingAs($user)->get(route('source-control.callback', 'github'))->assertRedirect(route('source-control.edit'));
+
+    expect($user->sourceControlConnection('github'))
+        ->token->toBe('access')
+        ->refresh_token->toBe('refresh')
+        ->expires_at->isFuture()->toBeTrue();
+});
+
+test('an expired github token is refreshed and the new pair saved before github is called', function () {
+    config(['services.github' => ['client_id' => 'client', 'client_secret' => 'secret']]);
+    Http::fake([
+        'github.com/login/oauth/access_token' => Http::response(['access_token' => 'new-token', 'refresh_token' => 'new-refresh', 'expires_in' => 28800]),
+        'api.github.com/user' => Http::response(['login' => 'jane']),
+    ]);
+    $connection = SourceControlConnection::factory()->create(['provider' => 'github', 'token' => 'old', 'refresh_token' => 'old-refresh', 'expires_at' => now()->subMinute()]);
+
+    app(SourceControlProviders::class)->get('github')->client($connection)->username();
+
+    expect($connection->fresh())
+        ->token->toBe('new-token')
+        ->refresh_token->toBe('new-refresh')
+        ->expires_at->isFuture()->toBeTrue();
+
+    Http::assertSent(fn (ClientRequest $request) => $request->url() === 'https://github.com/login/oauth/access_token' && $request['grant_type'] === 'refresh_token' && $request['refresh_token'] === 'old-refresh' && $request['client_id'] === 'client');
+    Http::assertSent(fn (ClientRequest $request) => $request->url() === 'https://api.github.com/user' && $request->hasHeader('Authorization', 'Bearer new-token'));
+});
+
+test('github tokens that never expire are used as they are', function () {
+    Http::fake(['api.github.com/user' => Http::response(['login' => 'jane'])]);
+    $connection = SourceControlConnection::factory()->create(['provider' => 'github', 'token' => 'current', 'refresh_token' => null, 'expires_at' => null]);
+
+    app(SourceControlProviders::class)->get('github')->client($connection)->username();
+
+    Http::assertNotSent(fn (ClientRequest $request) => str_contains($request->url(), 'login/oauth'));
+});
+
+test('a refused github refresh asks the user to reconnect', function () {
+    Http::fake(['github.com/login/oauth/access_token' => Http::response(['error' => 'bad_refresh_token'])]);
+    $connection = SourceControlConnection::factory()->create(['provider' => 'github', 'refresh_token' => 'revoked', 'expires_at' => now()->subMinute()]);
+
+    expect(fn () => app(SourceControlProviders::class)->get('github')->client($connection))
+        ->toThrow(SourceControlException::class, 'Reconnect GitHub');
+});
+
+test('a token github no longer accepts asks the user to reconnect', function () {
+    Http::fake(['api.github.com/user' => Http::response(['message' => 'Bad credentials'], 401)]);
+
+    expect(fn () => (new GitHubClient('revoked'))->username())
+        ->toThrow(SourceControlException::class, 'Reconnect GitHub from your source control settings.');
 });
 
 test('requests that create something on github are never retried', function () {

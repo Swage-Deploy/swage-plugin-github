@@ -14,6 +14,7 @@ use App\SourceControl\SourceControlClient;
 use App\SourceControl\SourceControlException;
 use App\SourceControl\SourceControlProvider;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 use Laravel\Socialite\Facades\Socialite;
 use Laravel\Socialite\Two\AbstractProvider;
 use Laravel\Socialite\Two\GithubProvider as SocialiteGitHub;
@@ -72,6 +73,8 @@ class GitHubProvider implements HasSettings, LinksToCommits, SourceControlProvid
             id: (string) $user->getId(),
             username: (string) $user->getNickname(),
             token: $user->token,
+            refreshToken: $user->refreshToken,
+            expiresAt: $user->expiresIn ? now()->addSeconds((int) $user->expiresIn) : null,
         );
     }
 
@@ -81,11 +84,46 @@ class GitHubProvider implements HasSettings, LinksToCommits, SourceControlProvid
     }
 
     /**
-     * GitHub OAuth app tokens never expire, so there is nothing to refresh.
+     * OAuth app tokens never expire. A GitHub App's tokens expire after eight hours unless the app turns that off, so
+     * an expired one is refreshed first. GitHub issues a new refresh token with every refresh, which is saved for next
+     * time.
      */
     public function client(SourceControlConnection $connection): SourceControlClient
     {
+        if ($connection->tokenHasExpired() && filled($connection->refresh_token)) {
+            $this->refresh($connection);
+        }
+
         return new GitHubClient($connection->token);
+    }
+
+    /**
+     * Exchange the refresh token for a new pair. GitHub reports a refused refresh in the body of a successful response.
+     * A connection that no longer exists, such as one captured by a queued job before its owner was deleted, is
+     * refreshed in memory only.
+     *
+     * @throws SourceControlException
+     */
+    protected function refresh(SourceControlConnection $connection): void
+    {
+        $response = Http::asForm()->acceptJson()->timeout(15)->post('https://github.com/login/oauth/access_token', [
+            'grant_type' => 'refresh_token',
+            'refresh_token' => $connection->refresh_token,
+            'client_id' => $this->credential('client_id'),
+            'client_secret' => $this->credential('client_secret'),
+        ]);
+
+        if ($response->failed() || blank($response->json('access_token'))) {
+            throw new SourceControlException('GitHub refused to refresh the connection. Reconnect GitHub from your source control settings.');
+        }
+
+        $attributes = [
+            'token' => $response->json('access_token'),
+            'refresh_token' => $response->json('refresh_token'),
+            'expires_at' => $response->json('expires_in') ? now()->addSeconds((int) $response->json('expires_in')) : null,
+        ];
+
+        $connection->exists ? $connection->update($attributes) : $connection->forceFill($attributes);
     }
 
     /**
