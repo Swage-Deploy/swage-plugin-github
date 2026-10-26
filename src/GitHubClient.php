@@ -9,6 +9,11 @@ use Illuminate\Http\Client\Response;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 
+/**
+ * Acts on GitHub as a connected account. A GitHub App's user token, which starts with ghu_, only reaches the
+ * repositories the app is installed on, so owners and repositories are listed from its installations. An OAuth app's
+ * token lists the user's account and organizations.
+ */
 class GitHubClient implements SourceControlClient
 {
     /**
@@ -21,6 +26,13 @@ class GitHubClient implements SourceControlClient
      */
     protected ?string $login = null;
 
+    /**
+     * The GitHub App's installations, once fetched.
+     *
+     * @var Collection<string, int>|null
+     */
+    protected ?Collection $installationIds = null;
+
     public function __construct(protected string $token) {}
 
     public function username(): string
@@ -31,10 +43,18 @@ class GitHubClient implements SourceControlClient
     /**
      * The user's own account, then their organizations.
      *
-     * Organizations are only listed once the user has granted the read:org scope, and only those that allow Swage.
+     * For a GitHub App, these are the accounts and organizations the app is installed on. For an OAuth app,
+     * organizations are only listed once the user has granted the read:org scope, and only those that allow Swage.
      */
     public function owners(): array
     {
+        if ($this->isAppToken()) {
+            $accounts = $this->installations()->keys()->sort(SORT_NATURAL | SORT_FLAG_CASE)->values();
+            $own = $accounts->first(fn (string $login): bool => strcasecmp($login, $this->username()) === 0);
+
+            return array_values(array_filter([$own, ...$accounts->reject(fn (string $login): bool => $login === $own)]));
+        }
+
         $organizations = $this->paginate('/user/orgs')
             ->pluck('login')
             ->sort(SORT_NATURAL | SORT_FLAG_CASE)
@@ -50,6 +70,16 @@ class GitHubClient implements SourceControlClient
      */
     public function repositories(string $owner): array
     {
+        if ($this->isAppToken()) {
+            $installation = $this->installations()->first(fn (int $id, string $login): bool => strcasecmp($login, $owner) === 0);
+
+            return $installation === null ? [] : $this->paginate("/user/installations/{$installation}/repositories", key: 'repositories')
+                ->filter(fn (array $repository): bool => $repository['permissions']['admin'] ?? false)
+                ->pluck('full_name')
+                ->values()
+                ->all();
+        }
+
         $repositories = strcasecmp($owner, $this->username()) === 0
             ? $this->paginate('/user/repos', ['affiliation' => 'owner', 'sort' => 'pushed'])
             : $this->paginate('/orgs/'.rawurlencode($owner).'/repos', ['type' => 'all', 'sort' => 'pushed']);
@@ -137,19 +167,38 @@ class GitHubClient implements SourceControlClient
     }
 
     /**
-     * Fetch every page of a listing, up to the page limit.
+     * Determine if the token is a GitHub App's user token rather than an OAuth app's.
+     */
+    protected function isAppToken(): bool
+    {
+        return str_starts_with($this->token, 'ghu_');
+    }
+
+    /**
+     * The GitHub App's installations the user can reach, as installation ids keyed by account login.
+     *
+     * @return Collection<string, int>
+     */
+    protected function installations(): Collection
+    {
+        return $this->installationIds ??= $this->paginate('/user/installations', key: 'installations')
+            ->mapWithKeys(fn (array $installation): array => [(string) $installation['account']['login'] => (int) $installation['id']]);
+    }
+
+    /**
+     * Fetch every page of a listing, up to the page limit. Some listings wrap their items in an object, under the key.
      *
      * @param  array<string, string>  $query
      * @return Collection<int, array<string, mixed>>
      */
-    protected function paginate(string $url, array $query = []): Collection
+    protected function paginate(string $url, array $query = [], ?string $key = null): Collection
     {
         $items = collect();
 
         for ($page = 1; $page <= self::MAX_PAGES; $page++) {
             $response = $this->succeeded($this->request()->get($url, [...$query, 'per_page' => 100, 'page' => $page]));
 
-            $items->push(...$response->json());
+            $items->push(...($key === null ? $response->json() : $response->json($key, [])));
 
             if (! str_contains((string) $response->header('Link'), 'rel="next"')) {
                 break;

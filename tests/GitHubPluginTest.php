@@ -281,3 +281,49 @@ test('a repository whose organization turned deploy keys off says where to allow
     expect(fn () => (new GitHubClient('token'))->addDeployKey('acme/app', 'Swage', 'ssh-ed25519 AAAA'))
         ->toThrow(SourceControlException::class, 'The acme organization, or its enterprise, has turned deploy keys off.');
 });
+
+test('connecting through a github app asks for no scopes, since the app\'s permissions decide its access', function () {
+    config(['services.github' => ['client_id' => 'Iv23liExampleApp', 'client_secret' => 'secret']]);
+
+    $location = $this->actingAs(User::factory()->create())->get(route('source-control.redirect', 'github'))->assertRedirect()->headers->get('Location');
+    parse_str((string) parse_url($location, PHP_URL_QUERY), $query);
+
+    expect($query['client_id'])->toBe('Iv23liExampleApp')
+        ->and($query['scope'] ?? '')->toBe('');
+});
+
+test('a github app\'s accounts and repositories come from where it is installed, the user\'s own account first', function () {
+    Http::fake([
+        'api.github.com/user/installations/11/repositories*' => Http::response(['total_count' => 2, 'repositories' => [
+            ['full_name' => 'acme/app', 'permissions' => ['admin' => true]],
+            ['full_name' => 'acme/readonly', 'permissions' => ['admin' => false]],
+        ]]),
+        'api.github.com/user/installations*' => Http::response(['total_count' => 3, 'installations' => [
+            ['id' => 11, 'account' => ['login' => 'acme']],
+            ['id' => 12, 'account' => ['login' => 'Jane']],
+            ['id' => 13, 'account' => ['login' => 'zeta']],
+        ]]),
+        'api.github.com/user' => Http::response(['login' => 'jane']),
+    ]);
+    $client = new GitHubClient('ghu_appusertoken');
+
+    expect($client->owners())->toBe(['Jane', 'acme', 'zeta'])
+        ->and($client->repositories('ACME'))->toBe(['acme/app'])
+        ->and($client->repositories('not-installed'))->toBe([]);
+
+    Http::assertNotSent(fn (ClientRequest $request) => str_contains($request->url(), '/user/orgs') || str_contains($request->url(), '/orgs/') || str_contains($request->url(), '/user/repos'));
+});
+
+test('an oauth app is flagged on the config page as reaching every private repository', function () {
+    config(['services.github' => ['client_id' => 'Ov23liOauthApp', 'client_secret' => 'secret']]);
+    $provider = app(SourceControlProviders::class)->get('github');
+
+    expect($provider->isGitHubApp())->toBeFalse()
+        ->and($provider->settings()[0]->description)->toContain('This is an OAuth app, which can only be given access to every private repository');
+
+    config(['services.github.client_id' => 'Iv23liExampleApp']);
+
+    expect($provider->isGitHubApp())->toBeTrue()
+        ->and($provider->settings()[0]->description)->not->toContain('OAuth app')
+        ->and($provider->setupInstructions())->toContain('Administration (Read and write), Webhooks (Read and write), Metadata (Read-only)');
+});

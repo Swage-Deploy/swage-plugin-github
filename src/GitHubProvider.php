@@ -21,8 +21,22 @@ use Laravel\Socialite\Two\GithubProvider as SocialiteGitHub;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Throwable;
 
+/**
+ * GitHub, connected through a GitHub App or an OAuth app.
+ *
+ * A GitHub App is the recommended setup: its tokens reach only the repositories the app is installed on, with only the
+ * permissions it was given. An OAuth app has to ask for the repo scope, which reaches every private repository the user
+ * can and lets the token push to them.
+ */
 class GitHubProvider implements HasSettings, LinksToCommits, SourceControlProvider
 {
+    /**
+     * The permissions a GitHub App needs: Administration to add and remove deploy keys, Webhooks for quick deploy, and
+     * Metadata, which GitHub always grants. It never needs a repository's contents, since servers clone with their
+     * deploy key.
+     */
+    public const array APP_PERMISSIONS = ['Administration' => 'Read and write', 'Webhooks' => 'Read and write', 'Metadata' => 'Read-only'];
+
     public function id(): string
     {
         return 'github';
@@ -36,8 +50,10 @@ class GitHubProvider implements HasSettings, LinksToCommits, SourceControlProvid
     public function settings(): array
     {
         return [
-            new Setting('client_id', __('Client ID'), __('From the OAuth app.')),
-            new Setting('client_secret', __('Client secret'), __('Generated in the OAuth app. Shown only once by GitHub.'), Setting::SECRET),
+            new Setting('client_id', __('Client ID'), $this->isConfigured() && ! $this->isGitHubApp()
+                ? __('This is an OAuth app, which can only be given access to every private repository of whoever connects, and can push to them. Create a GitHub App instead and enter its client ID, then have everyone reconnect GitHub.')
+                : __('From the GitHub App\'s settings page. A GitHub App\'s client ID starts with Iv.')),
+            new Setting('client_secret', __('Client secret'), __('Generated on the GitHub App\'s settings page. Shown only once by GitHub.'), Setting::SECRET),
         ];
     }
 
@@ -48,17 +64,29 @@ class GitHubProvider implements HasSettings, LinksToCommits, SourceControlProvid
 
     public function setupInstructions(): string
     {
-        return __('Create an OAuth app under GitHub\'s Settings → Developer settings → OAuth Apps, with :url as its authorization callback URL, and enter its client ID and secret.', [
+        return __('Create a GitHub App under GitHub\'s Settings → Developer settings → GitHub Apps, or in your organization\'s settings, with :url as its callback URL and webhooks turned off. Give it these repository permissions and no others: :permissions. Install it on the repositories Swage should deploy, then enter its client ID and a client secret.', [
             'url' => route('source-control.callback', $this->id()),
+            'permissions' => collect(self::APP_PERMISSIONS)->map(fn (string $access, string $permission): string => "{$permission} ({$access})")->implode(', '),
         ]);
     }
 
     /**
-     * Ask for access to repositories, to add deploy keys and webhooks, and to list the user's organizations.
+     * Determine if the credentials are a GitHub App's, whose client IDs start with Iv, rather than an OAuth app's.
+     */
+    public function isGitHubApp(): bool
+    {
+        return str_starts_with((string) $this->credential('client_id'), 'Iv');
+    }
+
+    /**
+     * A GitHub App's access comes from its permissions and where it is installed, so it asks for no scopes. An OAuth
+     * app has to ask for every repository, to add deploy keys and webhooks, and for the user's organizations.
      */
     public function redirect(): RedirectResponse
     {
-        return $this->socialite()->scopes(['repo', 'read:org'])->redirect();
+        return $this->isGitHubApp()
+            ? $this->socialite()->setScopes([])->redirect()
+            : $this->socialite()->scopes(['repo', 'read:org'])->redirect();
     }
 
     public function connectedAccount(Request $request): ConnectedAccount
