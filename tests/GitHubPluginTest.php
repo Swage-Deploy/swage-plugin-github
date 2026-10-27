@@ -107,8 +107,8 @@ test('installing a repository adds a deploy key to github and the server', funct
         ->and($site->deploy_key_public)->toStartWith('ssh-ed25519 ');
 
     Http::assertSent(fn ($request) => $request['key'] === $site->deploy_key_public && $request['read_only'] === true);
-    $shell->assertRan("sudo -u swage sh -c 'umask 077 && cat > \"\$1\"' sh '{$site->deployKeyPath()}'");
-    $shell->assertRan("| sudo -u swage tee '{$site->deployKeyPath()}.pub'");
+    $shell->assertRan("sudo -u {$site->system_user} sh -c 'umask 077 && cat > \"\$1\"' sh '{$site->deployKeyPath()}'");
+    $shell->assertRan("| sudo -u {$site->system_user} tee '{$site->deployKeyPath()}.pub'");
 });
 
 function fakeGitHubAccounts(): void
