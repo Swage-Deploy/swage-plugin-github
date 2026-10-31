@@ -119,7 +119,7 @@ class GitHubClient implements SourceControlClient
             throw new SourceControlException("GitHub does not allow deploy keys on {$repository}. The {$owner} organization, or its enterprise, has turned deploy keys off. An organization owner can allow them in the organization's settings on GitHub, under its deploy keys policy. Then install the repository again.");
         }
 
-        return (string) $this->succeeded($response)->json('id');
+        return (string) $this->succeeded($this->permitted($response, $repository, 'Administration', 'add deploy keys'))->json('id');
     }
 
     public function deleteDeployKey(string $repository, string $keyId): void
@@ -149,7 +149,7 @@ class GitHubClient implements SourceControlClient
             $response = $this->request(retry: false)->patch("/repos/{$repository}/hooks/{$existing}", $hook);
         }
 
-        return (string) $this->succeeded($response)->json('id');
+        return (string) $this->succeeded($this->permitted($response, $repository, 'Webhooks', 'create webhooks'))->json('id');
     }
 
     /**
@@ -206,6 +206,22 @@ class GitHubClient implements SourceControlClient
         }
 
         return $items;
+    }
+
+    /**
+     * Return the response, unless GitHub refused it because the GitHub App lacks a repository permission. GitHub also
+     * lists Administration and Webhooks under organization permissions, which do not cover repositories, and a change
+     * to an app's permissions only applies once its installation accepts it, so the error says both.
+     *
+     * @throws SourceControlException
+     */
+    protected function permitted(Response $response, string $repository, string $permission, string $action): Response
+    {
+        if ($response->status() === 403 && $response->json('message') === 'Resource not accessible by integration') {
+            throw new SourceControlException("Swage's GitHub App is not allowed to {$action} on {$repository}. In the app's settings on GitHub, give it {$permission} read and write access under Repository permissions, not the organization permission of the same name. Then accept the new permissions on the app's installation and try again.");
+        }
+
+        return $response;
     }
 
     /**

@@ -26,9 +26,12 @@ Adds GitHub as a source control provider. Sites can install repositories from th
    - Callback URL: `https://your-swage-domain/auth/github/callback`
    - Webhook: untick **Active**. Swage creates its own webhook on each repository when quick deploy is turned on.
    - Repository permissions: **Administration** read and write, to add and remove deploy keys, and **Webhooks** read and write, for quick deploy. **Metadata** read-only is added automatically. Leave everything else, including **Contents**, at no access: servers clone with their deploy key, not the app.
+     GitHub also lists **Administration** and **Webhooks** under **Organization permissions**. Those don't cover repositories, so leave them at no access. Once installed, the installation page should list "Read and write access to administration and repository hooks".
    - Where it can be installed: **Only on this account** is enough for your own account or organization.
 
    Then generate a **client secret**, and **install the app** on the account or organization, choosing only the repositories Swage should deploy. Install it on more repositories later from the app's public page, `https://github.com/apps/<app-name>`, under **Configure**.
+
+   If you change the app's permissions after installing it, GitHub only applies them once the installation accepts them. Accept the request from the installation's page, under the account's or organization's **Settings → GitHub Apps**. Until then, installing a repository or turning on quick deploy fails with "Swage's GitHub App is not allowed to…".
 
 2. **Install the plugin** from the **Available** list on Swage's **Plugins** page, where it is listed as GitHub. Swage installs the newest version, rebuilds itself with it and shows its progress.
 

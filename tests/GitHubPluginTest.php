@@ -282,6 +282,20 @@ test('a repository whose organization turned deploy keys off says where to allow
         ->toThrow(SourceControlException::class, 'The acme organization, or its enterprise, has turned deploy keys off.');
 });
 
+test('a github app without the repository permission it needs says which one to give it', function (string $call, string $endpoint, string $permission) {
+    Http::fake([$endpoint => Http::response(['message' => 'Resource not accessible by integration'], 403)]);
+
+    $client = new GitHubClient('ghu_token');
+
+    expect(fn () => $call === 'key'
+        ? $client->addDeployKey('acme/app', 'Swage', 'ssh-ed25519 AAAA')
+        : $client->createWebhook('acme/app', 'https://swage.test/webhooks/github/1', 'secret'))
+        ->toThrow(SourceControlException::class, "give it {$permission} read and write access under Repository permissions");
+})->with([
+    'deploy keys' => ['key', 'api.github.com/repos/acme/app/keys', 'Administration'],
+    'webhooks' => ['hook', 'api.github.com/repos/acme/app/hooks', 'Webhooks'],
+]);
+
 test('connecting through a github app asks for no scopes, since the app\'s permissions decide its access', function () {
     config(['services.github' => ['client_id' => 'Iv23liExampleApp', 'client_secret' => 'secret']]);
 
