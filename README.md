@@ -82,6 +82,10 @@ The plugin implements Swage's source control contract (`App\SourceControl\Source
 3. Copy the test into Swage's `tests/Feature`.
 4. Run `php artisan test --filter=GitHubPluginTest`.
 
+## Trademarks
+
+Swage is an independent project and is not affiliated with, endorsed by or sponsored by GitHub or Cloudflare. These names, and any related logos, are trademarks of their respective owners, who also hold the copyright in their products. They are used here only to describe what Swage works with.
+
 ## License
 
 Copyright (c) 2026 Node Dog Consulting. Released under the [MIT License](LICENSE).
